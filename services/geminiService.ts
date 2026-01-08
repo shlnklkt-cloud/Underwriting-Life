@@ -82,20 +82,22 @@ export async function processUnderwritingStep(
 
     return JSON.parse(response.text) as UnderwritingResponse;
   } catch (error: any) {
+    const errorString = JSON.stringify(error).toLowerCase();
     const isRateLimit = 
       error?.status === 429 || 
-      error?.message?.includes('429') || 
-      error?.message?.includes('RESOURCE_EXHAUSTED') ||
-      error?.message?.includes('quota');
+      errorString.includes('429') || 
+      errorString.includes('resource_exhausted') ||
+      errorString.includes('quota');
 
     if (isRateLimit && retryCount < MAX_RETRIES) {
+      // Exponential backoff with jitter: 2s, 4s, 8s, 16s, 32s
       const waitTime = Math.pow(2, retryCount + 1) * 1000 + Math.random() * 1000;
-      console.warn(`[Gemini API] Rate limited (429). Retrying attempt ${retryCount + 1}/${MAX_RETRIES} in ${Math.round(waitTime)}ms...`);
+      console.warn(`[AuraLife API] Rate limited. Attempt ${retryCount + 1}/${MAX_RETRIES}. Retrying in ${Math.round(waitTime)}ms...`);
       await sleep(waitTime);
       return processUnderwritingStep(history, userInput, retryCount + 1);
     }
 
-    console.error("[Gemini API Error]", error);
+    console.error("[AuraLife API Error]", error);
     throw error;
   }
 }
