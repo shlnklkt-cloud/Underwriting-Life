@@ -1,0 +1,5 @@
+{
+  "name": "AuraLife Agentic Underwriting",
+  "description": "An AI-powered life insurance underwriting orchestrator simulating a multi-agent medical evaluation workflow for term life insurance.",
+  "requestFramePermissions": []
+}
