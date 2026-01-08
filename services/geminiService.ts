@@ -1,9 +1,10 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { MASTER_SYSTEM_PROMPT } from "../constants";
 import { UnderwritingResponse } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 const responseSchema = {
   type: Type.OBJECT,
@@ -53,21 +54,48 @@ const responseSchema = {
 
 export async function processUnderwritingStep(
   history: { role: string; parts: { text: string }[] }[],
-  userInput: string
+  userInput: string,
+  retryCount = 0
 ): Promise<UnderwritingResponse> {
-  const model = ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: [
-      ...history,
-      { role: "user", parts: [{ text: userInput }] }
-    ],
-    config: {
-      systemInstruction: MASTER_SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      responseSchema: responseSchema,
-    },
-  });
+  const MAX_RETRIES = 5; 
+  
+  // Use process.env.API_KEY directly as per guidelines
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-  const response = await model;
-  return JSON.parse(response.text) as UnderwritingResponse;
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        ...history,
+        { role: "user", parts: [{ text: userInput }] }
+      ],
+      config: {
+        systemInstruction: MASTER_SYSTEM_PROMPT,
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+      },
+    });
+
+    if (!response || !response.text) {
+      throw new Error("Empty response from AI");
+    }
+
+    return JSON.parse(response.text) as UnderwritingResponse;
+  } catch (error: any) {
+    const isRateLimit = 
+      error?.status === 429 || 
+      error?.message?.includes('429') || 
+      error?.message?.includes('RESOURCE_EXHAUSTED') ||
+      error?.message?.includes('quota');
+
+    if (isRateLimit && retryCount < MAX_RETRIES) {
+      const waitTime = Math.pow(2, retryCount + 1) * 1000 + Math.random() * 1000;
+      console.warn(`[Gemini API] Rate limited (429). Retrying attempt ${retryCount + 1}/${MAX_RETRIES} in ${Math.round(waitTime)}ms...`);
+      await sleep(waitTime);
+      return processUnderwritingStep(history, userInput, retryCount + 1);
+    }
+
+    console.error("[Gemini API Error]", error);
+    throw error;
+  }
 }
